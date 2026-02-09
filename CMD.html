@@ -1,0 +1,42 @@
+function doGet(e) {
+  const action = e.parameter.action;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  if (action === 'loadAll') {
+    const recordSheet = ss.getSheetByName('records');
+    const pkgSheet = ss.getSheetByName('packages');
+    const userSheet = ss.getSheetByName('users'); // 新增：讀取用戶表
+    
+    const records = recordSheet.getDataRange().getValues();
+    const packages = pkgSheet.getRange("A1").getValue() || "[]";
+    const users = userSheet.getDataRange().getValues(); // 新增：獲取帳密資料
+    
+    const result = JSON.stringify({
+      records: records,
+      packages: packages,
+      users: users // 傳回前端比對
+    });
+    
+    return ContentService.createTextOutput(result).setMimeType(ContentService.MimeType.JSON);
+  }
+  return HtmlService.createHtmlOutput("CMD API 運行中");
+}
+
+function doPost(e) {
+  const params = JSON.parse(e.postData.contents);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  if (params.action === 'saveRecords') {
+    const sheet = ss.getSheetByName('records');
+    const pkgSheet = ss.getSheetByName('packages');
+    sheet.clear();
+    sheet.appendRow(['timestamp', 'date', 'type', 'category', 'id', 'name', 'price', 'qty', 'note', 'operator']);
+    if (params.data && params.data.length > 0) {
+      params.data.forEach(r => {
+        sheet.appendRow([r.timestamp, r.date, r.type, r.category, r.id, r.name, r.price, r.qty, r.note, r.operator]);
+      });
+    }
+    pkgSheet.getRange("A1").setValue(params.packages);
+    return ContentService.createTextOutput("Success").setMimeType(ContentService.MimeType.TEXT);
+  }
+}
