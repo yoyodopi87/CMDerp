@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMD 進銷存系統</title>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root { --cmd-dark: #2c3e50; --cmd-in: #27ae60; --cmd-out: #e67e22; --cmd-red: #e74c3c; --cmd-gold: #f1c40f; --cmd-blue: #3498db; --cmd-purple: #9b59b6; --cmd-excel: #1d6f42; }
+        body { font-family: "Microsoft JhengHei", Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; }
+        .container { max-width: 1450px; margin: auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        header { border-bottom: 3px solid var(--cmd-dark); margin-bottom: 20px; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        
+        .page { display: none; }
+        .active { display: block; }
+
+        /* 統計看板 */
+        .stats-container { display: grid; grid-template-columns: repeat(4, 1fr) 1.5fr; gap: 15px; margin-bottom: 25px; }
+        .cate-card { background: white; border: 1px solid #ddd; padding: 15px; border-radius: 8px; border-top: 4px solid var(--cmd-dark); box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+        .cate-name { font-size: 14px; font-weight: bold; color: #666; margin-bottom: 8px; }
+        .cate-details { font-size: 11px; color: #888; line-height: 1.5; max-height: 75px; overflow-y: auto; border-top: 1px solid #eee; padding-top: 5px; }
+        .asset-summary { background: var(--cmd-dark); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+        .asset-value { font-size: 26px; font-weight: bold; color: var(--cmd-gold); }
+
+        /* 篩選與工具列 */
+        .filter-panel { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; border: 1px solid #dee2e6; }
+        .filter-group { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: #495057; }
+        
+        /* 輸入面板 */
+        .input-panel { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #ddd; transition: 0.3s; }
+        .input-panel.editing { border-color: var(--cmd-blue); background-color: #ebf5fb; }
+        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 10px; align-items: flex-end; }
+        input, select, button { padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+        
+        .type-in { background-color: var(--cmd-in); color: white; }
+        .type-out { background-color: var(--cmd-out); color: white; }
+        .type-pkg { background-color: var(--cmd-purple); color: white; }
+        
+        button { cursor: pointer; font-weight: bold; }
+        .add-btn { background-color: var(--cmd-dark); color: white; border: none; height: 42px; }
+        
+        /* 表格與排序 */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background-color: var(--cmd-dark); color: white; padding: 12px; text-align: left; cursor: pointer; position: relative; font-size: 13px; }
+        th:hover { background-color: #34495e; }
+        th::after { content: ' ↕'; font-size: 10px; opacity: 0.5; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; }
+        .btn-edit { color: var(--cmd-blue); border: 1px solid var(--cmd-blue); background: none; padding: 3px 8px; border-radius: 4px; margin-right: 5px; }
+        .btn-del { color: var(--cmd-red); border: 1px solid var(--cmd-red); background: none; padding: 3px 8px; border-radius: 4px; }
+
+        /* 套餐頁面元件 */
+        .package-item { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 8px solid var(--cmd-purple); }
+        .pkg-comp-row { display: flex; gap: 10px; margin-top: 10px; align-items: center; background: #f9f9f9; padding: 8px; border-radius: 5px; flex-wrap: wrap; }
+        .subtotal-tag { color: var(--cmd-red); font-weight: bold; width: 90px; text-align: right; }
+        .stock-warn { color: var(--cmd-red); font-size: 11px; font-weight: bold; }
+        .input-error { border-color: var(--cmd-red) !important; color: var(--cmd-red) !important; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1 onclick="switchPage('main')" style="cursor:pointer">CMD 進銷存系統</h1>
+        <div style="display: flex; gap: 10px;">
+            <button style="background-color: var(--cmd-purple); color:white; border:none; padding:8px 15px; border-radius:6px;" onclick="switchPage('package')">📦 套餐管理</button>
+            <button style="background-color: var(--cmd-excel); color:white; border:none; padding:8px 15px; border-radius:6px;" onclick="exportData()">📤 匯出備份</button>
+            <button style="background-color: #8e44ad; color:white; border:none; padding:8px 15px; border-radius:6px;" onclick="document.getElementById('importFile').click()">📥 匯入資料</button>
+            <input type="file" id="importFile" accept=".xlsx, .xls" style="display:none;" onchange="importData(event)">
+        </div>
+    </header>
+
+    <div id="mainPage" class="page active">
+        <div class="stats-container" id="categoryStats">
+            <div class="asset-summary">
+                <div style="font-size: 12px; opacity: 0.8;">💰 庫存總資產價值</div>
+                <div class="asset-value">$ <span id="totalAssetValue">0</span></div>
+            </div>
+        </div>
+
+        <div class="filter-panel">
+            <div class="filter-group"> 日期 <input type="date" id="fStart" onchange="render()"> ~ <input type="date" id="fEnd" onchange="render()"> </div>
+            <div class="filter-group"> 類型 <select id="fType" onchange="render()"><option value="ALL">全部</option><option value="IN">進貨</option><option value="OUT">銷貨</option></select> </div>
+            <div class="filter-group"> 分類 <select id="fCate" onchange="render()"><option value="ALL">全部</option><option value="氣球">氣球</option><option value="燈具">燈具</option><option value="布置物">布置物</option><option value="耗材">耗材</option></select> </div>
+            <div class="filter-group"> 搜尋 <input type="text" id="fSearch" placeholder="代號或名稱..." oninput="render()"> </div>
+            <button onclick="location.reload()" style="font-size:12px; cursor:pointer;">重置篩選</button>
+        </div>
+        
+        <div class="input-panel" id="inputPanel">
+            <div id="editNotice" style="display:none; color:var(--cmd-blue); font-weight:bold; margin-bottom:10px;">✨ 編輯模式：修改完請按更新</div>
+            <div class="form-row">
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">日期</label><input type="date" id="pDate"></div>
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">類型</label>
+                    <select id="ioType" class="type-in" onchange="updateTypeMode(this.value)">
+                        <option value="IN">進貨 (+)</option>
+                        <option value="OUT">銷貨 (-)</option>
+                        <option value="PKG">套餐銷貨 (組)</option>
+                    </select>
+                </div>
+                <div id="itemInputs" style="display: contents;">
+                    <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">分類</label><select id="pCategory"><option value="氣球">氣球</option><option value="燈具">燈具</option><option value="布置物">布置物</option><option value="耗材">耗材</option></select></div>
+                    <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">代號</label><input type="text" id="pId" oninput="autoFill('id')"></div>
+                    <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">品名</label><input type="text" id="pName" oninput="autoFill('name')"></div>
+                </div>
+                <div id="pkgInputs" style="display: none; flex-direction:column;">
+                    <label style="font-size:12px;font-weight:bold">選擇套餐模板</label>
+                    <select id="pkgSelect"></select>
+                </div>
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">單價</label><input type="number" id="pPrice" placeholder="0"></div>
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">數量</label><input type="number" id="pQty" placeholder="0"></div>
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">備註</label><input type="text" id="pNote"></div>
+                <button class="add-btn" id="submitBtn" onclick="saveRecord()">送出登記</button>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th onclick="sortRecords('date')">日期</th>
+                    <th onclick="sortRecords('type')">類型</th>
+                    <th onclick="sortRecords('category')">分類</th>
+                    <th onclick="sortRecords('id')">代號</th>
+                    <th onclick="sortRecords('name')">品名</th>
+                    <th onclick="sortRecords('price')">單價</th>
+                    <th onclick="sortRecords('qty')">數量</th>
+                    <th onclick="sortRecords('subtotal')">小計</th>
+                    <th style="width:130px;">操作</th>
+                </tr>
+            </thead>
+            <tbody id="recordTableBody"></tbody>
+        </table>
+    </div>
+
+    <div id="packagePage" class="page">
+        <div style="display:flex; justify-content:space-between; margin-bottom:20px;">
+            <h2>套餐組合設定 (自動庫存比對)</h2>
+            <button class="add-btn" style="background-color: var(--cmd-purple);" onclick="addPkgTemplate()">+ 新增套餐組合</button>
+        </div>
+        <div id="packageList"></div>
+        <button onclick="switchPage('main')" style="margin-top:20px; padding:10px; cursor:pointer;">← 返回主頁面</button>
+    </div>
+</div>
+
+<script>
+    let records = JSON.parse(localStorage.getItem('cmd_records')) || [];
+    let productInfo = JSON.parse(localStorage.getItem('cmd_products')) || {}; 
+    let packages = JSON.parse(localStorage.getItem('cmd_packages')) || [];
+    let sortConfig = { key: 'date', direction: 'desc' };
+
+    document.getElementById('pDate').valueAsDate = new Date();
+
+    function switchPage(pageId) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById(pageId + 'Page').classList.add('active');
+        if(pageId === 'package') renderPackageList();
+        render();
+    }
+
+    function updateTypeMode(val) {
+        const io = document.getElementById('ioType');
+        io.className = val === 'IN' ? 'type-in' : (val === 'OUT' ? 'type-out' : 'type-pkg');
+        document.getElementById('itemInputs').style.display = val === 'PKG' ? 'none' : 'contents';
+        document.getElementById('pkgInputs').style.display = val === 'PKG' ? 'flex' : 'none';
+        if(val === 'PKG') {
+            document.getElementById('pkgSelect').innerHTML = packages.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+        }
+    }
+
+    // --- 核心邏輯：成本與庫存 ---
+    function getLastCost(id) {
+        const ins = records.filter(r => r.id === id && r.type === 'IN');
+        if(ins.length === 0) return 0;
+        ins.sort((a,b) => new Date(b.date) - new Date(a.date));
+        return ins[0].price;
+    }
+
+    function getStock(id) {
+        let q = 0;
+        records.forEach(r => { if(r.id === id) q += (r.type === 'IN' ? r.qty : -r.qty); });
+        return q;
+    }
+
+    function getProductsByCategory(cat) {
+        let prods = [];
+        for(let id in productInfo) { if(productInfo[id].category === cat) prods.push({id, name: productInfo[id].name}); }
+        return prods;
+    }
+
+    // --- 套餐管理 ---
+    function renderPackageList() {
+        const list = document.getElementById('packageList');
+        list.innerHTML = packages.map((p, pIdx) => {
+            let totalCost = 0;
+            const rows = p.components.map((c, cIdx) => {
+                const cost = getLastCost(c.id);
+                const sub = cost * c.qty;
+                const currentStock = getStock(c.id);
+                const isShortage = c.qty > currentStock;
+                totalCost += sub;
+
+                return `
+                    <div class="pkg-comp-row">
+                        分類：<select onchange="updateCompCat(${pIdx}, ${cIdx}, this.value)" style="width:90px">
+                            <option value="">選擇</option>
+                            <option value="氣球" ${c.category==='氣球'?'selected':''}>氣球</option>
+                            <option value="燈具" ${c.category==='燈具'?'selected':''}>燈具</option>
+                            <option value="布置物" ${c.category==='布置物'?'selected':''}>布置物</option>
+                            <option value="耗材" ${c.category==='耗材'?'selected':''}>耗材</option>
+                        </select>
+                        品名：<select onchange="updateComp(${pIdx}, ${cIdx}, 'id', this.value)" style="width:180px">
+                            <option value="">-- 選擇商品 --</option>
+                            ${getProductsByCategory(c.category).map(prod => `<option value="${prod.id}" ${c.id===prod.id?'selected':''}>${prod.id}|${prod.name}</option>`).join('')}
+                        </select>
+                        數量：<input type="number" value="${c.qty}" 
+                                   class="${isShortage ? 'input-error' : ''}" 
+                                   style="width:55px" 
+                                   onchange="updateComp(${pIdx}, ${cIdx}, 'qty', this.value)">
+                        <span class="stock-warn">${isShortage ? `⚠️ 庫存不足！剩餘 ${currentStock}` : `(庫存: ${currentStock})`}</span>
+                        <span style="font-size:11px; color:#888; margin-left:auto;">成本:$${cost}</span>
+                        <span class="subtotal-tag">$${sub.toLocaleString()}</span>
+                        <button onclick="delComp(${pIdx}, ${cIdx})" style="color:red; border:none; background:none; cursor:pointer;">×</button>
+                    </div>
+                `;
+            }).join('');
+
+            return `<div class="package-item">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <b>套餐：<input type="text" value="${p.name}" onchange="updatePkg(${pIdx}, 'name', this.value)" style="width:250px"></b>
+                    <button onclick="delPkg(${pIdx})" style="color:var(--cmd-red); font-size:12px; border:1px solid; border-radius:4px; padding:2px 8px; cursor:pointer;">刪除套餐</button>
+                </div>
+                ${rows}
+                <div style="display:flex; justify-content:space-between; margin-top:15px; align-items:center;">
+                    <button onclick="addComp(${pIdx})" style="font-size:11px; cursor:pointer; background:#eee; padding:5px 10px; border-radius:4px;">+ 新增內容零件</button>
+                    <div style="font-weight:bold">預估總成本：<span style="color:var(--cmd-red); font-size:18px;">$${totalCost.toLocaleString()}</span></div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function addPkgTemplate() { packages.push({ name: '新套餐組合', components: [] }); syncPkg(); }
+    function updatePkg(i, f, v) { packages[i][f] = v; syncPkg(); }
+    function delPkg(i) { if(confirm('確定要刪除整個套餐嗎？')){ packages.splice(i,1); syncPkg(); } }
+    function addComp(i) { packages[i].components.push({ category: '', id: '', qty: 1 }); syncPkg(); }
+    function delComp(pi, ci) { packages[pi].components.splice(ci, 1); syncPkg(); }
+    function updateCompCat(pi, ci, v) { packages[pi].components[ci].category = v; packages[pi].components[ci].id = ""; syncPkg(); }
+    function updateComp(pi, ci, f, v) { packages[pi].components[ci][f] = v; syncPkg(); }
+    function syncPkg() { localStorage.setItem('cmd_packages', JSON.stringify(packages)); renderPackageList(); }
+
+    // --- 主頁進銷存紀錄 ---
+    function saveRecord() {
+        const type = document.getElementById('ioType').value;
+        const date = document.getElementById('pDate').value;
+        const qty = parseInt(document.getElementById('pQty').value) || 0;
+        const price = parseFloat(document.getElementById('pPrice').value) || 0;
+        const note = document.getElementById('pNote').value;
+
+        if(type === 'PKG') {
+            const pkgName = document.getElementById('pkgSelect').value;
+            const template = packages.find(p => p.name === pkgName);
+            if(!template) return;
+            for(let c of template.components) { 
+                if(getStock(c.id) < (c.qty * qty)) { 
+                    alert(`⚠️ 扣帳失敗：零件 [${c.id}] 庫存不足！\n目前剩餘：${getStock(c.id)}\n此套餐需要：${c.qty * qty}`); 
+                    return; 
+                } 
+            }
+            records.unshift({ timestamp: Date.now(), type: 'OUT', category: '套餐銷貨', id: 'PKG', name: pkgName, price, qty, note, date });
+            template.components.forEach(c => {
+                records.unshift({ timestamp: Date.now()+Math.random(), type: 'OUT', category: '套餐零件自動扣除', id: c.id, name: `(套餐) ${pkgName}`, price: 0, qty: c.qty * qty, note: '連動扣庫', date });
+            });
+        } else {
+            const id = document.getElementById('pId').value.trim();
+            const name = document.getElementById('pName').value.trim();
+            const category = document.getElementById('pCategory').value;
+            if(!id || !name || qty <= 0) { alert("請檢查欄位是否填寫完整且數量大於0"); return; }
+            if(type === 'OUT' && qty > getStock(id)) { alert(`⚠️ 庫存不足！目前 [${id}] 僅剩 ${getStock(id)}`); return; }
+            records.unshift({ timestamp: Date.now(), type, category, id, name, price, qty, note, date });
+            productInfo[id] = { name, category };
+        }
+        sync(); cancelEdit(); render(); reset();
+    }
+
+    function editRecord(ts) {
+        const item = records.find(r => r.timestamp === ts);
+        if(!item) return;
+        document.getElementById('pDate').value = item.date;
+        document.getElementById('ioType').value = item.type;
+        if(item.id !== 'PKG') {
+            document.getElementById('pCategory').value = item.category;
+            document.getElementById('pId').value = item.id;
+            document.getElementById('pName').value = item.name;
+        }
+        document.getElementById('pPrice').value = item.price;
+        document.getElementById('pQty').value = item.qty;
+        document.getElementById('pNote').value = item.note;
+        updateTypeMode(item.type);
+        document.getElementById('inputPanel').classList.add('editing');
+        document.getElementById('editNotice').style.display = 'block';
+        document.getElementById('submitBtn').innerText = '更新紀錄';
+        records = records.filter(r => r.timestamp !== ts);
+        render();
+        window.scrollTo({top:0, behavior:'smooth'});
+    }
+
+    function cancelEdit() {
+        document.getElementById('inputPanel').classList.remove('editing');
+        document.getElementById('editNotice').style.display = 'none';
+        document.getElementById('submitBtn').innerText = '送出登記';
+    }
+
+    function render() {
+        const tableBody = document.getElementById('recordTableBody');
+        const statsDiv = document.getElementById('categoryStats');
+        tableBody.innerHTML = '';
+        let stocks = {}; let cateSum = { "氣球": [], "燈具": [], "布置物": [], "耗材": [] };
+        let totalAsset = 0;
+
+        records.forEach(r => {
+            if(!stocks[r.id]) stocks[r.id] = { name: r.name, category: r.category, qty: 0, lastPrice: 0 };
+            if(r.type === 'IN') { stocks[r.id].qty += r.qty; stocks[r.id].lastPrice = r.price; }
+            else stocks[r.id].qty -= r.qty;
+        });
+
+        for(let id in stocks) {
+            const s = stocks[id];
+            if(cateSum[s.category]) {
+                cateSum[s.category].push(`${s.name}: ${s.qty}`);
+                if(s.qty > 0) totalAsset += (s.qty * getLastCost(id));
+            }
+        }
+        
+        const assetHTML = statsDiv.querySelector('.asset-summary').outerHTML;
+        statsDiv.innerHTML = '';
+        ["氣球", "燈具", "布置物", "耗材"].forEach(c => {
+            const card = document.createElement('div'); card.className = 'cate-card';
+            card.innerHTML = `<div class="cate-name">${c}</div><div class="cate-details">${cateSum[c].join('<br>') || '無庫存'}</div>`;
+            statsDiv.appendChild(card);
+        });
+        statsDiv.insertAdjacentHTML('beforeend', assetHTML);
+        document.getElementById('totalAssetValue').innerText = totalAsset.toLocaleString();
+
+        const s=document.getElementById('fStart').value, e=document.getElementById('fEnd').value, t=document.getElementById('fType').value, c=document.getElementById('fCate').value, q=document.getElementById('fSearch').value.toLowerCase();
+        let display = records.filter(r => (!s||r.date>=s)&&(!e||r.date<=e)&&(t==='ALL'||r.type===t)&&(c==='ALL'||r.category===c)&&(!q||r.id.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)));
+        
+        display.sort((a,b) => {
+            let vA = a[sortConfig.key], vB = b[sortConfig.key];
+            if(sortConfig.key==='subtotal'){ vA=a.price*a.qty; vB=b.price*b.qty; }
+            return (vA<vB ? -1 : 1) * (sortConfig.direction==='asc'?1:-1);
+        });
+
+        display.forEach(r => {
+            const row = tableBody.insertRow();
+            row.innerHTML = `<td>${r.date}</td><td style="color:${r.type==='IN'?'green':'#e67e22'}">${r.type}</td><td>${r.category}</td><td><code>${r.id}</code></td><td><strong>${r.name}</strong></td><td>$${r.price.toLocaleString()}</td><td>${r.qty}</td><td>$${(r.price*r.qty).toLocaleString()}</td><td><button class="btn-edit" onclick="editRecord(${r.timestamp})">編輯</button><button class="btn-del" onclick="delRec(${r.timestamp})">刪除</button></td>`;
+        });
+    }
+
+    function sortRecords(k) { if(sortConfig.key===k) sortConfig.direction=sortConfig.direction==='asc'?'desc':'asc'; else {sortConfig.key=k; sortConfig.direction='asc';} render(); }
+    
+    function autoFill(trigger) {
+        const idI = document.getElementById('pId'), nameI = document.getElementById('pName'), cateI = document.getElementById('pCategory');
+        if(trigger === 'id') {
+            const info = productInfo[idI.value.trim()];
+            if(info) { nameI.value = info.name; cateI.value = info.category; }
+        } else if(trigger === 'name') {
+            for(let id in productInfo) { if(productInfo[id].name === nameI.value.trim()) { idI.value = id; cateI.value = productInfo[id].category; break; } }
+        }
+    }
+
+    function reset() { document.getElementById('pId').value=''; document.getElementById('pName').value=''; document.getElementById('pPrice').value=''; document.getElementById('pQty').value=''; document.getElementById('pNote').value=''; document.getElementById('pDate').valueAsDate=new Date(); }
+    function sync() { localStorage.setItem('cmd_records', JSON.stringify(records)); localStorage.setItem('cmd_products', JSON.stringify(productInfo)); }
+    function delRec(ts) { if(confirm('確定刪除這筆紀錄嗎？')){ records=records.filter(r=>r.timestamp!==ts); sync(); render(); } }
+    function clearAllData() { if(confirm('⚠️ 警告：這將清空系統內所有歷史資料！確定嗎？')){ localStorage.clear(); location.reload(); } }
+    
+    function exportData() {
+        const ws = XLSX.utils.json_to_sheet(records.map(r => ({ "日期": r.date, "類型": r.type, "分類": r.category, "代號": r.id, "品名": r.name, "單價": r.price, "數量": r.qty, "備註": r.note })));
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "CMD進銷存紀錄");
+        XLSX.writeFile(wb, `CMD_備份_${new Date().toLocaleDateString()}.xlsx`);
+    }
+
+    function importData(e) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const workbook = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+            const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+            json.forEach(row => {
+                records.unshift({ timestamp: Date.now()+Math.random(), type: (row["類型"]==="進貨"?"IN":"OUT"), category: row["分類"]||"耗材", id: String(row["代號"]||""), name: row["品名"]||"", price: parseFloat(row["單價"])||0, qty: parseInt(row["數量"])||0, note: row["備註"]||"", date: row["日期"]||new Date().toISOString().split('T')[0] });
+                if(row["代號"]) productInfo[row["代號"]] = { name: row["品名"], category: row["分類"] };
+            });
+            sync(); render(); alert("資料匯入完成！");
+        };
+        reader.readAsArrayBuffer(file);
+    }
+    render();
+</script>
+</body>
+</html>
