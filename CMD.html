@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMD 雲端進銷存系統 - 終極完整版</title>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root { --cmd-dark: #2c3e50; --cmd-in: #27ae60; --cmd-out: #e67e22; --cmd-red: #e74c3c; --cmd-gold: #f1c40f; --cmd-blue: #3498db; --cmd-purple: #9b59b6; --cmd-excel: #1d6f42; }
+        body { font-family: "Microsoft JhengHei", Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; }
+        .container { max-width: 1450px; margin: auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .page { display: none; } .active { display: block; }
+        #loginPage { text-align: center; padding: 80px 20px; }
+        .login-box { max-width: 420px; margin: auto; background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border: 1px solid #eee; }
+        .login-input-group { margin-bottom: 20px; text-align: left; }
+        .login-input-group label { display: block; font-weight: bold; margin-bottom: 8px; color: #555; }
+        .login-select, .login-password { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box; }
+        .login-btn { width: 100%; padding: 15px; background: var(--cmd-dark); color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        header { border-bottom: 3px solid var(--cmd-dark); margin-bottom: 20px; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .user-badge { font-size: 13px; background: #e9ecef; padding: 5px 12px; border-radius: 20px; color: var(--cmd-dark); font-weight: bold; }
+        #cloudStatus { font-size: 12px; padding: 4px 10px; border-radius: 4px; font-weight: bold; }
+        .status-ok { background: #d4edda; color: #155724; }
+        .status-err { background: #f8d7da; color: #721c24; }
+        .stats-container { display: grid; grid-template-columns: repeat(4, 1fr) 1.5fr; gap: 15px; margin-bottom: 25px; }
+        .cate-card { background: white; border: 1px solid #ddd; padding: 15px; border-radius: 8px; border-top: 4px solid var(--cmd-dark); box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+        .cate-name { font-size: 14px; font-weight: bold; color: #666; margin-bottom: 8px; }
+        .cate-details { font-size: 11px; color: #888; line-height: 1.5; max-height: 70px; overflow-y: auto; border-top: 1px solid #eee; padding-top: 5px; }
+        .asset-summary { background: var(--cmd-dark); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+        .asset-value { font-size: 26px; font-weight: bold; color: var(--cmd-gold); }
+        .filter-panel { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; border: 1px solid #dee2e6; }
+        .input-panel { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #ddd; }
+        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 10px; align-items: flex-end; }
+        input, select, button { padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background-color: var(--cmd-dark); color: white; padding: 12px; text-align: left; cursor: pointer; position: relative; font-size: 13px; }
+        th:hover { background-color: #34495e; }
+        th::after { content: ' ↕'; opacity: 0.3; font-size: 10px; margin-left: 5px; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; }
+        .btn-edit { color: var(--cmd-blue); border: 1px solid var(--cmd-blue); background: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+        .btn-del { color: var(--cmd-red); border: 1px solid var(--cmd-red); background: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+        .package-item { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 8px solid var(--cmd-purple); }
+        .pkg-comp-row { display: flex; gap: 10px; margin-top: 10px; align-items: center; background: #f9f9f9; padding: 8px; border-radius: 5px; flex-wrap: wrap; }
+        .stock-warn { color: var(--cmd-red); font-size: 11px; font-weight: bold; }
+        .input-error { border-color: var(--cmd-red) !important; color: var(--cmd-red) !important; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="loginPage" class="page active">
+        <div class="login-box">
+            <h2 style="color: var(--cmd-dark);">CMD 系統登入</h2>
+            <p style="color: #888; font-size: 14px; margin-bottom: 30px;">🔐 雲端連線：<span id="loadStatus">正在偵測網路...</span></p>
+            <div class="login-input-group">
+                <label>操作身份</label>
+                <select id="userSelect" class="login-select">
+                    <option value="陳華佑">陳華佑 (管理者)</option>
+                    <option value="李尉彤">李尉彤</option>
+                    <option value="焦麟凱">焦麟凱</option>
+                    <option value="羅億驊">羅億驊</option>
+                </select>
+            </div>
+            <div class="login-input-group">
+                <label>登入密碼</label>
+                <input type="password" id="loginPassword" class="login-password" placeholder="請輸入雲端密碼">
+            </div>
+            <button class="login-btn" id="loginBtn" onclick="handleLogin()">進入系統</button>
+            <p id="loginError" style="color: var(--cmd-red); font-size: 14px; margin-top: 15px; display: none;"></p>
+        </div>
+    </div>
+
+    <div id="mainPage" class="page">
+        <header>
+            <h1 onclick="switchPage('main')" style="cursor:pointer">CMD 進銷存系統</h1>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span id="cloudStatus" class="status-ok">✅ 雲端已同步</span>
+                <div class="user-badge">👤 <span id="displayUser">---</span></div>
+                <button style="background-color: var(--cmd-purple); color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer;" onclick="switchPage('package')">📦 套餐管理</button>
+                <button onclick="logout()" style="color:#999; border:none; background:none; font-size:11px; cursor:pointer;">登出</button>
+            </div>
+        </header>
+
+        <div id="categoryStats" class="stats-container">
+            <div class="asset-summary">
+                <div style="font-size: 12px; opacity: 0.8;">💰 庫存總資產價值</div>
+                <div class="asset-value">$ <span id="totalAssetValue">0</span></div>
+            </div>
+        </div>
+
+        <div class="filter-panel">
+            <div style="display:flex; align-items:center; gap:8px;">日期 <input type="date" id="fStart" onchange="render()"> ~ <input type="date" id="fEnd" onchange="render()"></div>
+            <select id="fCate" onchange="render()"><option value="ALL">全部分類</option><option value="氣球">氣球</option><option value="燈具">燈具</option><option value="布置物">布置物</option><option value="耗材">耗材</option></select>
+            <input type="text" id="fSearch" placeholder="搜尋代號或品名..." oninput="render()" style="flex-
