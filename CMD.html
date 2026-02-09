@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMD 雲端進銷存系統</title>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root { --cmd-dark: #2c3e50; --cmd-in: #27ae60; --cmd-out: #e67e22; --cmd-red: #e74c3c; --cmd-gold: #f1c40f; --cmd-blue: #3498db; --cmd-purple: #9b59b6; --cmd-excel: #1d6f42; }
+        body { font-family: "Microsoft JhengHei", Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; }
+        .container { max-width: 1450px; margin: auto; background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .page { display: none; } .active { display: block; }
+        #loginPage { text-align: center; padding: 80px 20px; }
+        .login-box { max-width: 420px; margin: auto; background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border: 1px solid #eee; }
+        .login-input-group { margin-bottom: 20px; text-align: left; }
+        .login-input-group label { display: block; font-weight: bold; margin-bottom: 8px; }
+        .login-select, .login-password { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box; }
+        .login-btn { width: 100%; padding: 15px; background: var(--cmd-dark); color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        header { border-bottom: 3px solid var(--cmd-dark); margin-bottom: 20px; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .user-badge { font-size: 13px; background: #e9ecef; padding: 5px 12px; border-radius: 20px; color: var(--cmd-dark); font-weight: bold; }
+        #cloudStatus { font-size: 12px; padding: 4px 10px; border-radius: 4px; font-weight: bold; }
+        .status-ok { background: #d4edda; color: #155724; }
+        .status-err { background: #f8d7da; color: #721c24; }
+        .stats-container { display: grid; grid-template-columns: repeat(4, 1fr) 1.5fr; gap: 15px; margin-bottom: 25px; }
+        .cate-card { background: white; border: 1px solid #ddd; padding: 15px; border-radius: 8px; border-top: 4px solid var(--cmd-dark); }
+        .asset-summary { background: var(--cmd-dark); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+        .filter-panel { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
+        .input-panel { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 2px solid #ddd; }
+        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 10px; align-items: flex-end; }
+        input, select, button { padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background-color: var(--cmd-dark); color: white; padding: 12px; text-align: left; cursor: pointer; font-size: 13px; position: relative; }
+        th:hover { background-color: #34495e; }
+        th::after { content: ' ↕'; opacity: 0.3; margin-left: 5px; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; }
+        .btn-edit { color: var(--cmd-blue); border: 1px solid var(--cmd-blue); background: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+        .btn-del { color: var(--cmd-red); border: 1px solid var(--cmd-red); background: none; padding: 3px 8px; border-radius: 4px; cursor: pointer; }
+        .package-item { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 8px solid var(--cmd-purple); }
+        .pkg-comp-row { display: flex; gap: 10px; margin-top: 10px; align-items: center; background: #f9f9f9; padding: 8px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="loginPage" class="page active">
+        <div class="login-box">
+            <h2 style="color: var(--cmd-dark);">CMD 系統登入</h2>
+            <p style="color: #888; font-size: 14px; margin-bottom: 30px;">🔐 雲端連線狀態：<span id="loadStatus">正在連線...</span></p>
+            <div class="login-input-group">
+                <label>操作身份</label>
+                <select id="userSelect" class="login-select">
+                    <option value="陳華佑">陳華佑 (管理者)</option>
+                    <option value="李尉彤">李尉彤</option>
+                    <option value="焦麟凱">焦麟凱</option>
+                    <option value="羅億驊">羅億驊</option>
+                </select>
+            </div>
+            <div class="login-input-group">
+                <label>登入密碼</label>
+                <input type="password" id="loginPassword" class="login-password" placeholder="請輸入密碼">
+            </div>
+            <button class="login-btn" id="loginBtn" onclick="handleLogin()">進入系統</button>
+            <p id="loginError" style="color: var(--cmd-red); font-size: 14px; margin-top: 15px; display: none;">驗證失敗，請檢查密碼或網路</p>
+        </div>
+    </div>
+
+    <div id="mainPage" class="page">
+        <header>
+            <h1 onclick="switchPage('main')" style="cursor:pointer">CMD 進銷存系統</h1>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span id="cloudStatus" class="status-ok">✅ 雲端已連線</span>
+                <div class="user-badge">👤 <span id="displayUser">---</span></div>
+                <button style="background-color: var(--cmd-purple); color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer;" onclick="switchPage('package')">📦 套餐管理</button>
+                <button style="background-color: var(--cmd-excel); color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer;" onclick="exportData()">📤 匯出備份</button>
+                <button onclick="logout()" style="color:#999; border:none; background:none; font-size:11px; cursor:pointer;">登出</button>
+            </div>
+        </header>
+
+        <div id="categoryStats" class="stats-container"><div class="asset-summary">💰 庫存總值: $ <span id="totalAssetValue">0</span></div></div>
+        <div class="filter-panel">
+            <input type="date" id="fStart" onchange="render()"> ~ <input type="date" id="fEnd" onchange="render()">
+            <select id="fCate" onchange="render()"><option value="ALL">全部分類</option><option value="氣球">氣球</option><option value="燈具">燈具</option><option value="布置物">布置物</option><option value="耗材">耗材</option></select>
+            <input type="text" id="fSearch" placeholder="搜尋..." oninput="render()" style="flex-grow:1">
+            <button onclick="fetchCloudData()" style="background:#fff; font-size:12px; cursor:pointer">🔄 刷新</button>
+        </div>
+        
+        <div class="input-panel" id="inputPanel">
+            <div class="form-row">
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">日期</label><input type="date" id="pDate"></div>
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">類型</label>
+                    <select id="ioType" onchange="updateTypeMode(this.value)"><option value="IN">進貨 (+)</option><option value="OUT">銷貨 (-)</option><option value="PKG">套餐銷貨</option></select>
+                </div>
+                <div id="itemInputs" style="display: contents;">
+                    <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">分類</label>
+                        <select id="pCategory"><option value="氣球">氣球</option><option value="燈具">燈具</option><option value="布置物">布置物</option><option value="耗材">耗材</option></select>
+                    </div>
+                    <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">代號</label><input type="text" id="pId" oninput="autoFill('id')"></div>
+                    <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">品名</label><input type="text" id="pName" oninput="autoFill('name')"></div>
+                </div>
+                <div id="pkgInputs" style="display: none;"><select id="pkgSelect"></select></div>
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">單價</label><input type="number" id="pPrice" placeholder="0"></div>
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">數量</label><input type="number" id="pQty" placeholder="0"></div>
+                <div style="display:flex; flex-direction:column;"><label style="font-size:12px;font-weight:bold">備註</label><input type="text" id="pNote"></div>
+                <button class="add-btn" id="submitBtn" onclick="saveRecord()" style="background-color:var(--cmd-dark);color:white">送出</button>
+            </div>
+        </div>
+
+        <table id="recordTable">
+            <thead>
+                <tr>
+                    <th onclick="sortRecords('date')">日期</th><th>類型</th><th>分類</th><th onclick="sortRecords('id')">代號</th><th>品名</th><th>單價</th><th>數量</th><th onclick="sortRecords('operator')">操作者</th><th>小計</th><th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="recordTableBody"></tbody>
+        </table>
+    </div>
+
+    <div id="packagePage" class="page">
+        <div style="display:flex; justify-content:space-between; margin-bottom:20px;"><h2>套餐組合設定</h2><button class="add-btn" style="background-color: var(--cmd-purple);" onclick="addPkgTemplate()">+ 新增套餐組合</button></div>
+        <div id="packageList"></div>
+        <button onclick="switchPage('main')" style="margin-top:20px; padding:10px; cursor:pointer;">← 返回主頁面</button>
+    </div>
+</div>
+
+<script>
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbw0D7JhhmP4NpK6RkTsT0btSbcbFqf5A5nefakMJT-YKCbHlOyr3l7WXSRC0XjhjkQ2TQ/exec";
+    let currentUser = "", records = [], productInfo = {}, packages = [], sortConfig = { key: 'date', direction: 'desc' };
+
+    window.onload = async () => {
+        try {
+            const response = await fetch(GAS_URL + "?action=loadAll&t=" + Date.now());
+            if(response.ok) document.getElementById('loadStatus').innerText = "✅ 已就緒";
+        } catch (e) { document.getElementById('loadStatus').innerText = "❌ 連線不穩"; }
+    };
+
+    async function handleLogin() {
+        const user = document.getElementById('userSelect').value;
+        const pass = String(document.getElementById('loginPassword').value).trim();
+        const btn = document.getElementById('loginBtn');
+        const error = document.getElementById('loginError');
+        
+        btn.innerText = "驗證中...";
+        error.style.display = "none";
+        
+        try {
+            const response = await fetch(GAS_URL + "?action=loadAll&t=" + Date.now());
+            const data = await response.json();
+            
+            const found = data.users.find(u => String(u[0]).trim() === user && String(u[1]).trim() === pass);
+            
+            if (found) {
+                currentUser = user;
+                document.getElementById('displayUser').innerText = user;
+                if(data.records && data.records.length > 1) {
+                    records = data.records.slice(1).map(r => ({timestamp:r[0], date:r[1], type:r[2], category:r[3], id:String(r[4]), name:r[5], price:Number(r[6]), qty:Number(r[7]), note:r[8], operator:r[9]}));
+                    records.forEach(r => productInfo[r.id] = { name: r.name, category: r.category });
+                }
+                if(data.packages) try { packages = JSON.parse(data.packages); } catch(e) {}
+                switchPage('main');
+            } else {
+                error.innerText = "密碼錯誤！"; error.style.display = "block"; btn.innerText = "進入系統";
+            }
+        } catch (e) {
+            error.innerText = "連線失敗"; error.style.display = "block"; btn.innerText = "進入系統";
+        }
+    }
+
+    function logout() { currentUser = ""; window.location.replace(window.location.href); }
+
+    async function fetchCloudData() {
+        try {
+            const response = await fetch(GAS_URL + "?action=loadAll&t=" + Date.now());
+            const data = await response.json();
+            if(data.records && data.records.length > 1) records = data.records.slice(1).map(r => ({timestamp:r[0], date:r[1], type:r[2], category:r[3], id:String(r[4]), name:r[5], price:Number(r[6]), qty:Number(r[7]), note:r[8], operator:r[9]}));
+            if(data.packages) try { packages = JSON.parse(data.packages); } catch(e) {}
+            render();
+        } catch(e) { console.error(e); }
+    }
+
+    async function pushToCloud() {
+        await fetch(GAS_URL, {method: "POST", mode: "no-cors", body: JSON.stringify({action: "saveRecords", data: records, packages: JSON.stringify(packages)})});
+        document.getElementById('cloudStatus').innerText = "✅ 雲端已更新";
+    }
+
+    function sync() { pushToCloud(); render(); }
+    function switchPage(p) { document.querySelectorAll('.page').forEach(el => el.classList.remove('active')); document.getElementById(p + 'Page').classList.add('active'); if(p === 'package') renderPackageList(); render(); }
+    function updateTypeMode(v) { document.getElementById('itemInputs').style.display = v==='PKG'?'none':'contents'; document.getElementById('pkgInputs').style.display = v==='PKG'?'block':'none'; if(v==='PKG') document.getElementById('pkgSelect').innerHTML = packages.map(p=>`<option value="${p.name}">${p.name}</option>`).join(''); }
+    function getStock(id) { let q=0; records.forEach(r=>{if(r.id===id) q+=(r.type==='IN'?r.qty:-r.qty);}); return q; }
+    function getLastCost(id) { const ins = records.filter(r => r.id === id && r.type === 'IN'); if(ins.length === 0) return 0; ins.sort((a,b) => new Date(b.date) - new Date(a.date)); return ins[0].price; }
+    function sortRecords(k) { if(sortConfig.key===k) sortConfig.direction=sortConfig.direction==='asc'?'desc':'asc'; else {sortConfig.key=k; sortConfig.direction='asc';} render(); }
+    function autoFill(t) { const idI=document.getElementById('pId'), nameI=document.getElementById('pName'); if(t==='id'){ const info=productInfo[idI.value.trim()]; if(info){ nameI.value=info.name; document.getElementById('pCategory').value=info.category; } } else { for(let id in productInfo){ if(productInfo[id].name===nameI.value.trim()){ idI.value=id; document.getElementById('pCategory').value=productInfo[id].category; break; } } } }
+    function reset() { document.getElementById('pId').value=''; document.getElementById('pName').value=''; document.getElementById('pPrice').value=''; document.getElementById('pQty').value=''; document.getElementById('pDate').valueAsDate=new Date(); }
+
+    function saveRecord() {
+        const type = document.getElementById('ioType').value, date = document.getElementById('pDate').value, qty = parseInt(document.getElementById('pQty').value) || 0, price = parseFloat(document.getElementById('pPrice').value) || 0;
+        if(!date || qty <= 0) return alert("內容有誤");
+        if(type === 'PKG') {
+            const pkgName = document.getElementById('pkgSelect').value, temp = packages.find(p => p.name === pkgName);
+            for(let c of temp.components) { if(getStock(c.id) < (c.qty * qty)) return alert(`庫存不足！項目 [${c.id}]`); }
+            records.unshift({ timestamp: Date.now(), type: 'OUT', category: '套餐銷貨', id: 'PKG', name: pkgName, price, qty, note: document.getElementById('pNote').value, date, operator: currentUser });
+            temp.components.forEach(c => { records.unshift({ timestamp: Date.now()+Math.random(), type: 'OUT', category: '套餐扣除', id: c.id, name: `(套餐) ${pkgName}`, price: 0, qty: c.qty * qty, note: '連動', date, operator: currentUser }); });
+        } else {
+            const id = document.getElementById('pId').value.trim(), name = document.getElementById('pName').value.trim();
+            if(!id || !name) return alert("填寫完整");
+            if(type === 'OUT' && qty > getStock(id)) return alert(`庫存不足！`);
+            records.unshift({ timestamp: Date.now(), type, category: document.getElementById('pCategory').value, id, name, price, qty, note: document.getElementById('pNote').value, date, operator: currentUser });
+            productInfo[id] = { name, category: document.getElementById('pCategory').value };
+        }
+        sync(); reset();
+    }
+
+    function render() {
+        const tableBody = document.getElementById('recordTableBody');
+        const statsDiv = document.getElementById('categoryStats');
+        if(!tableBody) return; tableBody.innerHTML = '';
+        let stocks = {}, cateSum = { "氣球": [], "燈具": [], "布置物": [], "耗材": [] }, totalAsset = 0;
+        records.forEach(r => { if(!stocks[r.id]) stocks[r.id] = { name: r.name, category: r.category, qty: 0 }; if(r.type === 'IN') stocks[r.id].qty += r.qty; else stocks[r.id].qty -= r.qty; });
+        for(let id in stocks) { const s = stocks[id]; if(cateSum[s.category]) { cateSum[s.category].push(`${s.name}: ${s.qty}`); if(s.qty > 0) totalAsset += (s.qty * getLastCost(id)); } }
+        const assetHTML = `<div class="asset-summary">💰 庫存總值: $ <span id="totalAssetValue">${totalAsset.toLocaleString()}</span></div>`;
+        statsDiv.innerHTML = ''; ["氣球", "燈具", "布置物", "耗材"].forEach(c => { const card = document.createElement('div'); card.className = 'cate-card'; card.innerHTML = `<div class="cate-name">${c}</div><div class="cate-details">${cateSum[c].join('<br>') || '無'}</div>`; statsDiv.appendChild(card); }); statsDiv.insertAdjacentHTML('beforeend', assetHTML);
+        const s=document.getElementById('fStart').value, e=document.getElementById('fEnd').value, c=document.getElementById('fCate').value, q=document.getElementById('fSearch').value.toLowerCase();
+        let display = records.filter(r => (!s||r.date>=s)&&(!e||r.date<=e)&&(c==='ALL'||r.category===c)&&(!q||r.id.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)));
+        display.sort((a,b) => { let vA = a[sortConfig.key], vB = b[sortConfig.key]; if(sortConfig.key==='subtotal'){ vA=a.price*a.qty; vB=b.price*b.qty; } if (vA < vB) return sortConfig.direction === 'asc' ? -1 : 1; if (vA > vB) return sortConfig.direction === 'asc' ? 1 : -1; return 0; });
+        display.forEach(r => { const row = tableBody.insertRow(); row.innerHTML = `<td>${r.date}</td><td style="color:${r.type==='IN'?'green':'#e67e22'}">${r.type}</td><td>${r.category}</td><td><code>${r.id}</code></td><td><strong>${r.name}</strong></td><td>$${r.price}</td><td>${r.qty}</td><td><span style="color:#888; font-weight:bold;">${r.operator||'系統'}</span></td><td>$${(r.price*r.qty).toLocaleString()}</td><td><button class="btn-edit" onclick="editRecord(${r.timestamp})">編</button><button class="btn-del" onclick="delRec(${r.timestamp})">刪</button></td>`; });
+    }
+
+    function editRecord(ts) { const item = records.find(r => r.timestamp === ts); if(!item || (item.operator !== currentUser && currentUser !== "陳華佑")) return alert("⛔ 無權限"); document.getElementById('pDate').value = item.date; document.getElementById('ioType').value = item.type; if(item.id !== 'PKG') { document.getElementById('pCategory').value = item.category; document.getElementById('pId').value = item.id; document.getElementById('pName').value = item.name; } document.getElementById('pPrice').value = item.price; document.getElementById('pQty').value = item.qty; document.getElementById('pNote').value = item.note; updateTypeMode(item.type); records = records.filter(r => r.timestamp !== ts); render(); }
+    function delRec(ts) { const item = records.find(r => r.timestamp === ts); if(!item || (item.operator !== currentUser && currentUser !== "陳華佑")) return alert("⛔ 無權限"); if(confirm('確定刪除？')){ records=records.filter(r=>r.timestamp!==ts); sync(); } }
+    function renderPackageList() { const list = document.getElementById('packageList'); list.innerHTML = packages.map((p, pIdx) => { let totalCost = 0; const rows = p.components.map((c, cIdx) => { const cost = getLastCost(c.id); const sub = cost * c.qty; totalCost += sub; const curStock = getStock(c.id); return `<div class="pkg-comp-row"><select onchange="updateCompCat(${pIdx},${cIdx},this.value)" style="width:90px"><option value="">類</option><option value="氣球" ${c.category==='氣球'?'selected':''}>氣球</option><option value="燈具" ${c.category==='燈具'?'selected':''}>燈具</option><option value="布置物" ${c.category==='布置物'?'selected':''}>布置物</option><option value="耗材" ${c.category==='耗材'?'selected':''}>耗材</option></select><select onchange="updateComp(${pIdx},${cIdx},'id',this.value)" style="width:180px"><option value="">--選擇--</option>${Object.keys(productInfo).filter(id=>productInfo[id].category===c.category).map(id=>`<option value="${id}" ${c.id===id?'selected':''}>${id}|${productInfo[id].name}</option>`).join('')}</select>數：<input type="number" value="${c.qty}" onchange="updateComp(${pIdx},${cIdx},'qty',this.value)" style="width:40px"><span>(${curStock})</span><button onclick="delComp(${pIdx},${cIdx})" style="color:red; border:none; background:none;">×</button></div>`; }).join(''); return `<div class="package-item"><b>${p.name}</b>${rows}<div style="display:flex; justify-content:space-between; margin-top:10px;"><button onclick="addComp(${pIdx})" style="font-size:11px;">+ 項目</button><b>成本：$${totalCost}</b><button onclick="delPkg(${pIdx})" style="color:red; border:none; background:none;">刪除</button></div></div>`; }).join(''); }
+    function addPkgTemplate() { packages.push({ name: '新套餐組合', components: [] }); syncPkg(); }
+    function syncPkg() { pushToCloud(); renderPackageList(); }
+    function delPkg(i) { if(confirm('刪？')){ packages.splice(i,1); syncPkg(); } }
+    function addComp(i) { packages[i].components.push({ category: '', id: '', qty: 1 }); syncPkg(); }
+    function delComp(pi, ci) { packages[pi].components.splice(ci, 1); syncPkg(); }
+    function updateCompCat(pi, ci, v) { packages[pi].components[ci].category = v; packages[pi].components[ci].id = ""; syncPkg(); }
+    function updateComp(pi, ci, f, v) { packages[pi].components[ci][f] = v; syncPkg(); }
+    function updatePkg(i, f, v) { packages[i][f] = v; syncPkg(); }
+</script>
+</body>
+</html>
